@@ -11,25 +11,25 @@ Là, vous pouvez fusionner Tests dans main.
 
 Sur Tests :
 
-git switch Tests
+`git switch Tests`
 
-git pull
+`git pull`
 
 Vous faites vos derniers tests.
 
 **Étape 2 — passer sur main**
 
-git switch main
+`git switch main`
 
-git pull
+`git pull`
 
 **Étape 3 — fusionner Tests dans main**
 
-git merge Tests
+`git merge Tests`
 
 Si tout se passe bien :
 
-git push
+`git push`
 
 Et voilà.
 
