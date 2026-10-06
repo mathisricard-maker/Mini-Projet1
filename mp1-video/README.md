@@ -32,3 +32,11 @@ Si tout se passe bien :
 git push
 
 Et voilà.
+
+
+
+## Pour le choix des données à transmettre, dans la table evenement (par exemple) :
+- id_capture (créé automatiquement)
+- chemin_image (chemin racine vers l'image)
+- date_capture (date de la capture d'écran après mouvement)
+- intensite (Dégrès d'intensité de changement de pixels)
