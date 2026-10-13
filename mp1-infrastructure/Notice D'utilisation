@@ -1,0 +1,289 @@
+# Notice d'utilisation du serveur MP1
+
+Serveur de surveillance de la salle 215. Auteur : Liam Brassat (L.B.), tâche 3 du Mini-Projet 1.
+
+> [!IMPORTANT]
+> Cette notice ne contient aucun identifiant réel. Chaque identifiant est représenté par un repère
+> entre chevrons, à remplacer par la vraie valeur, transmise séparément par le responsable du serveur.
+
+## Sommaire
+
+1. [Présentation](#1-présentation)
+2. [Avant de commencer](#2-avant-de-commencer)
+3. [Mise en service](#3-mise-en-service)
+4. [Configurer les identifiants](#4-configurer-les-identifiants)
+5. [Utilisation](#5-utilisation)
+6. [Maintenance](#6-maintenance)
+7. [Dépannage](#7-dépannage)
+8. [Règles de sécurité](#8-règles-de-sécurité)
+
+---
+
+## 1. Présentation
+
+Le serveur est un Raspberry Pi 3 qui centralise les données de la salle 215. Il reçoit les détections
+du capteur de présence et les photos de la caméra, les enregistre dans une base de données et les
+affiche dans un navigateur.
+
+| Adresse | Rôle |
+|---|---|
+| `http://172.16.10.239:5000/` | Tableau de bord : état de la salle et activité du jour |
+| `http://172.16.10.239:5000/api/images` | Galerie des photos de la caméra |
+| `http://172.16.10.239/phpmyadmin` | Consultation de la base de données |
+| `http://172.16.10.239:5000/api/health` | Vérification rapide que le serveur répond |
+
+Le serveur est relié au Wi-Fi `Wifi_Iot215` (réseau 172.16.10.0/24) avec l'adresse fixe 172.16.10.239.
+
+![Schéma réseau](schema_reseau.png)
+
+## 2. Avant de commencer
+
+### 2.1 Matériel et logiciels nécessaires
+
+- Le Raspberry Pi avec sa carte microSD et son alimentation.
+- Un PC connecté au Wi-Fi `Wifi_Iot215`.
+- Un navigateur web pour le tableau de bord, la galerie et phpMyAdmin.
+- MobaXterm (ou tout client SSH) pour l'administration.
+
+### 2.2 Identifiants
+
+| Repère | Rôle | Où il est utilisé |
+|---|---|---|
+| `<UTILISATEUR_PI>` | Compte Linux du Raspberry Pi | Connexion SSH |
+| `<MOT_DE_PASSE_PI>` | Mot de passe de ce compte | Connexion SSH, commandes `sudo` |
+| `<UTILISATEUR_BDD>` | Compte de la base utilisé par l'API | Fichier `.env`, phpMyAdmin |
+| `<MOT_DE_PASSE_BDD>` | Mot de passe de ce compte | Fichier `.env`, phpMyAdmin |
+| `<ADMIN_BDD>` | Compte administrateur de la base | phpMyAdmin |
+| `<MOT_DE_PASSE_ADMIN>` | Mot de passe de ce compte | phpMyAdmin |
+| `<MOT_DE_PASSE_WIFI>` | Clé du Wi-Fi `Wifi_Iot215` | Raspberry Pi, ESP32, PC |
+
+> [!WARNING]
+> Un identifiant ne s'écrit jamais dans un document, un message, une capture d'écran ou un fichier
+> publié sur GitHub. Sur le serveur, il est rangé uniquement dans le fichier `.env` (partie 4).
+
+## 3. Mise en service
+
+### 3.1 Démarrer le serveur
+
+1. Brancher l'alimentation du Raspberry Pi. Il n'y a pas d'interrupteur.
+2. Attendre environ 1 minute : le Pi se connecte au Wi-Fi et l'API démarre toute seule.
+3. Sur le PC, ouvrir `http://172.16.10.239:5000/api/health`.
+4. La page doit afficher `"status":"running"`. Le serveur est prêt.
+
+### 3.2 Se connecter en SSH avec MobaXterm
+
+1. Ouvrir MobaXterm, cliquer sur **Session**, puis **SSH**.
+2. Remote host : `172.16.10.239`. Cocher **Specify username** et saisir `<UTILISATEUR_PI>`. Port : `22`.
+3. Cliquer sur **OK** et saisir `<MOT_DE_PASSE_PI>`. Les caractères ne s'affichent pas pendant la saisie : c'est normal.
+
+Le panneau **Sftp** à gauche permet de copier des fichiers entre le PC et le Pi par glisser-déposer.
+
+### 3.3 Arrêter le serveur
+
+Ne pas débrancher le Pi directement : la carte microSD peut être abîmée. Arrêter d'abord le système,
+attendre que la LED verte cesse de clignoter, puis débrancher :
+
+```bash
+sudo shutdown -h now
+```
+
+Pour redémarrer : `sudo reboot`.
+
+## 4. Configurer les identifiants
+
+> [!TIP]
+> Une commande qui commence par une **espace** n'est pas enregistrée dans l'historique du terminal.
+> Utilisez-la pour toute commande qui contient un mot de passe.
+
+### 4.1 Fichier `.env` de l'API
+
+L'API lit ses identifiants dans `server/api/.env`. Le dépôt fournit un modèle sans valeurs, `.env.example`.
+
+```bash
+cd ~/mp1-infrastructure/server/api
+cp .env.example .env      # crée le fichier à partir du modèle
+nano .env                 # remplacer les valeurs entre < >
+chmod 600 .env            # lisible uniquement par son propriétaire
+```
+
+Contenu à obtenir (les chevrons disparaissent, seule la vraie valeur reste) :
+
+```ini
+DB_HOST=localhost
+DB_USER=<UTILISATEUR_BDD>
+DB_PASSWORD=<MOT_DE_PASSE_BDD>
+DB_NAME=mp1_surveillance
+API_HOST=0.0.0.0
+API_PORT=5000
+```
+
+Dans nano : `Ctrl+O` puis `Entrée` pour enregistrer, `Ctrl+X` pour quitter. Mettre la valeur entre
+guillemets si elle contient une espace ou un `#`. Appliquer ensuite la modification :
+
+```bash
+sudo systemctl restart mp1-api
+```
+
+Si une valeur manque, l'API refuse de démarrer et indique laquelle dans `journalctl -u mp1-api -n 20`.
+
+### 4.2 Compte de la base de données
+
+Le script d'initialisation crée la base, le compte et les tables à partir des valeurs du fichier
+`.env`. Il faut donc remplir `.env` avant de le lancer :
+
+```bash
+bash ~/mp1-infrastructure/database/init-db.sh
+```
+
+Pour **changer le mot de passe** de ce compte, faire les trois opérations dans l'ordre :
+
+```bash
+ sudo mysql -u root -e "ALTER USER '<UTILISATEUR_BDD>'@'localhost' IDENTIFIED BY '<NOUVEAU_MOT_DE_PASSE>';"
+nano ~/mp1-infrastructure/server/api/.env      # mettre le nouveau mot de passe
+sudo systemctl restart mp1-api
+```
+
+### 4.3 Compte administrateur pour phpMyAdmin
+
+Le compte `root` de MariaDB ne fonctionne qu'avec `sudo` dans le terminal : il ne peut pas se
+connecter à phpMyAdmin. Ce script crée un compte administrateur. Il demande le nom et le mot de
+passe au clavier et ne les enregistre nulle part :
+
+```bash
+bash ~/mp1-infrastructure/database/create-admin.sh
+```
+
+### 4.4 Mot de passe du compte Linux
+
+```bash
+passwd      # demande l'ancien puis le nouveau mot de passe
+```
+
+### 4.5 Wi-Fi du Raspberry Pi
+
+Si la clé du Wi-Fi change :
+
+```bash
+ sudo nmcli con mod "Wifi_Iot215" wifi-sec.psk "<MOT_DE_PASSE_WIFI>"
+sudo nmcli con up "Wifi_Iot215"
+```
+
+L'adresse fixe 172.16.10.239 est conservée.
+
+### 4.6 Appareils qui envoient des données
+
+- **ESP32 du capteur :** le nom du Wi-Fi, sa clé et l'adresse de l'API sont des constantes au début
+  de `src/main.cpp`. Saisir la clé juste avant de téléverser le programme, et ne pas publier le
+  fichier avec la clé.
+- **Programme de la caméra :** l'adresse de l'API se règle dans `API_URL`. Le PC doit être connecté
+  au Wi-Fi `Wifi_Iot215`. Le mot de passe de la caméra reste dans le programme du groupe vidéo, à ne
+  pas publier.
+
+## 5. Utilisation
+
+### 5.1 Tableau de bord
+
+Adresse : `http://172.16.10.239:5000/`. La page se met à jour seule toutes les 5 secondes : pas
+besoin de la recharger.
+
+| Élément | Signification |
+|---|---|
+| Plaque « 215 » verte | Salle libre : plus aucun mouvement détecté |
+| Plaque « 215 » rouge | Salle occupée : le capteur détecte une présence |
+| Aujourd'hui | Nombre de mouvements détectés, d'alertes caméra et de photos stockées |
+| Graphique en barres | Mouvements détectés heure par heure sur les 24 dernières heures |
+| Dernières photos | Les 6 photos les plus récentes ; un clic ouvre la photo |
+| Derniers événements | Les 10 derniers messages du capteur et de la caméra, avec l'heure |
+| Pastille en haut à droite | Verte : données à jour. Rouge : serveur ou base injoignable |
+
+### 5.2 Galerie photos
+
+Adresse : `http://172.16.10.239:5000/api/images`, ou le lien **Photos** du tableau de bord.
+
+- Les photos sont classées de la plus récente à la plus ancienne, avec l'heure, la date et la caméra.
+- Un clic agrandit la photo. Les boutons ‹ et ›, ou les flèches du clavier, passent à la photo voisine.
+- **Ouvrir en grand** affiche la photo seule ; **Télécharger** l'enregistre sur le PC.
+- `Échap`, ou un clic à côté de la photo, ferme l'aperçu.
+
+### 5.3 phpMyAdmin
+
+1. Ouvrir `http://172.16.10.239/phpmyadmin`.
+2. Se connecter avec `<UTILISATEUR_BDD>` (base du projet seulement) ou `<ADMIN_BDD>` (toutes les bases).
+3. À gauche, cliquer sur `mp1_surveillance`, puis sur une table.
+4. L'onglet **Parcourir** affiche les données. Cliquer sur **Parcourir** à nouveau pour voir les nouvelles lignes.
+
+| Table | Contenu |
+|---|---|
+| `pir_events` | Détections du capteur : heure, état (active ou inactive), durée |
+| `video_events` | Événements de la caméra |
+| `images` | Photos stockées : nom, taille, heure |
+| `room_status` | État actuel de la salle |
+
+L'onglet **SQL** permet de lancer une requête, par exemple les 20 dernières détections :
+
+```sql
+SELECT * FROM pir_events ORDER BY timestamp DESC LIMIT 20;
+```
+
+### 5.4 Envoyer des données au serveur
+
+Pour les programmeurs des appareils. La liste complète est dans [API_DOCUMENTATION.md](API_DOCUMENTATION.md).
+
+| Envoi | Adresse | Format |
+|---|---|---|
+| Détection du capteur | `POST /api/pir/event` | JSON : `sensor_id`, `duration` (s), `status` (`active` ou `inactive`) |
+| Photo de la caméra | `POST /api/video/image` | Formulaire multipart : `image` (jpg ou png, 10 Mo max), `camera_id`, `event_type`, `description` |
+
+Un envoi réussi renvoie le code **201**. Un code **400** signale une donnée manquante ou invalide.
+
+## 6. Maintenance
+
+Commandes à lancer en SSH sur le Raspberry Pi.
+
+| Besoin | Commande |
+|---|---|
+| Voir si l'API tourne | `sudo systemctl status mp1-api` |
+| Redémarrer l'API | `sudo systemctl restart mp1-api` |
+| Lire les messages d'erreur | `journalctl -u mp1-api -n 30 --no-pager` |
+| Vérifier l'API automatiquement | `bash ~/mp1-infrastructure/tests/test_api.sh` |
+| Mettre à jour le code | `cd ~/mp1-infrastructure && git pull`, puis redémarrer l'API |
+| Place libre sur la carte SD | `df -h /` |
+| Place prise par les photos | `du -sh ~/mp1-infrastructure/server/uploads/images` |
+
+### 6.1 Sauvegarder la base
+
+```bash
+mysqldump -u <UTILISATEUR_BDD> -p mp1_surveillance > ~/sauvegarde_$(date +%F).sql
+```
+
+Le mot de passe est demandé au clavier. Copier ensuite le fichier sur le PC avec le panneau Sftp de
+MobaXterm. Les photos se sauvegardent en copiant le dossier `server/uploads/images`.
+
+### 6.2 Restaurer une sauvegarde
+
+```bash
+mysql -u <UTILISATEUR_BDD> -p mp1_surveillance < ~/sauvegarde_AAAA-MM-JJ.sql
+```
+
+## 7. Dépannage
+
+| Symptôme | Cause probable | Solution |
+|---|---|---|
+| La page ne s'ouvre pas du tout | Pi éteint, PC sur un autre Wi-Fi, ou Pi pas encore démarré | Vérifier l'alimentation, connecter le PC à `Wifi_Iot215`, attendre 1 minute |
+| `Endpoint not found` | Adresse incomplète ou mal tapée | Utiliser une adresse de la partie 1 |
+| Pastille rouge sur le tableau de bord | MariaDB arrêtée ou identifiants faux dans `.env` | `sudo systemctl restart mariadb`, puis vérifier `.env` et les journaux |
+| L'API ne démarre pas | Valeur manquante dans `.env`, ou erreur dans le code | `journalctl -u mp1-api -n 30` indique la cause |
+| `Address already in use` | Une copie de l'API lancée à la main occupe le port 5000 | `pkill -f "python3 app.py"`, puis `sudo systemctl restart mp1-api` |
+| Connexion phpMyAdmin refusée | Compte `root`, ou mot de passe interne de phpMyAdmin utilisé par erreur | Utiliser `<UTILISATEUR_BDD>` ou `<ADMIN_BDD>` |
+| L'ESP32 affiche une erreur réseau | API arrêtée ou mauvaise adresse dans le programme | Tester `/api/health`, vérifier l'adresse dans `main.cpp` |
+| Pas de nouvelle photo dans la galerie | PC de la caméra hors du Wi-Fi ou programme arrêté | Lire le terminal du programme caméra (« Serveur joignable ») |
+| Le Pi n'a plus l'adresse 172.16.10.239 | Configuration réseau modifiée | Refaire la configuration `nmcli` ([README](../README.md), étape 2) |
+
+## 8. Règles de sécurité
+
+- Ne jamais publier le fichier `.env` : il est exclu de GitHub par `.gitignore`. Vérifier avec
+  `git status` avant chaque envoi.
+- Choisir des mots de passe d'au moins 10 caractères, différents pour chaque compte.
+- Changer immédiatement un mot de passe qui a été affiché ou partagé par erreur (partie 4).
+- La base de données n'est accessible que depuis le Pi lui-même ; seuls l'API et phpMyAdmin y accèdent.
+- Arrêter le Pi avec `sudo shutdown -h now` avant de le débrancher.
