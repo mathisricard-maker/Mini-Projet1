@@ -1,0 +1,18 @@
+# Service systemd : l'API démarre au boot du Raspberry Pi et redémarre si elle s'arrête.
+# <UTILISATEUR_PI> est remplacé automatiquement à l'installation :
+#   sed "s/<UTILISATEUR_PI>/$USER/g" mp1-api.service | sudo tee /etc/systemd/system/mp1-api.service
+#   sudo systemctl daemon-reload && sudo systemctl enable --now mp1-api
+[Unit]
+Description=MP1 API Flask (surveillance salle 215)
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+User=<UTILISATEUR_PI>
+WorkingDirectory=/home/<UTILISATEUR_PI>/mp1-infrastructure/server/api
+ExecStart=/home/<UTILISATEUR_PI>/mp1-infrastructure/server/api/venv/bin/python app.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
