@@ -27,8 +27,6 @@
 # mp1-video - Vidéosurveillance
 Groupe : M.R., C.R.
 
-<img src="img/Tâches Mini Projet.drawio.png">
-
 Quand tout fonctionne
 
 Là, vous pouvez fusionner Tests dans main.
