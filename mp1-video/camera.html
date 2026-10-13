@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Surveillance, caméra 1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0D3442;        /* fond : bleu-vert Carnus foncé */
+    --panel: #134656;     /* bandeaux et panneaux (couleur du logo) */
+    --line: #24596A;      /* traits et bordures */
+    --line-soft: #1B4E5F;
+    --gold: #F2A900;      /* or Carnus : mouvement, actions */
+    --gold-ink: #0D3442;
+    --paper: #EEF3F4;     /* texte principal */
+    --mist: #95B3BD;      /* texte secondaire */
+    --ok: #6FD3A8;        /* connecté */
+    --down: #E8806F;      /* déconnecté / enregistrement */
+    --radius-l: 10px;
+    --radius-s: 6px;
+    /* Largeur de la vidéo calculée pour que tout tienne en hauteur d'écran */
+    --pad: clamp(1rem, 3vw, 2rem);
+    --gap: clamp(1rem, 2.5vw, 2.25rem);
+    --side: 290px;
+    --monitor: max(420px, calc((100vh - 390px) * 4 / 3));
+    --page: calc(var(--monitor) + var(--gap) + var(--side));
+    --font-ui: "Barlow Semi Condensed", "Arial Narrow", system-ui, sans-serif;
+    --font-body: "Barlow", system-ui, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: dark; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--paper);
+    font: 400 1rem/1.5 var(--font-body);
+  }
+  h1, h2 { font-family: var(--font-ui); margin: 0; }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+  /* ---------- En-tête ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .75rem 1.25rem;
+    padding: .75rem max(var(--pad), (100% - var(--page)) / 2);
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+  }
+  .logo { display: block; height: 44px; width: auto; }
+  .title h1 { font-size: 1.5rem; font-weight: 700; line-height: 1.1; }
+  .title p { margin: 0; color: var(--mist); font-size: .95rem; }
+  .conn {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .35rem .85rem;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font: 600 1rem/1.2 var(--font-ui);
+    color: var(--mist);
+  }
+  .conn::before {
+    content: "";
+    width: .6rem; height: .6rem;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .conn[data-state="live"] { color: var(--paper); }
+  .conn[data-state="live"]::before { background: var(--ok); }
+  .conn[data-state="down"] { color: var(--down); border-color: var(--down); }
+
+  /* ---------- Disposition ---------- */
+  .layout, .captures, footer {
+    width: min(100% - 2 * var(--pad), var(--page));
+    margin: 0 auto;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) var(--side);
+    gap: var(--gap);
+    padding: var(--pad) 0;
+  }
+  @media (max-width: 960px) {
+    :root { --page: var(--monitor); }
+    .layout { grid-template-columns: minmax(0, 1fr); }
+  }
+
+  /* ---------- Écran vidéo ---------- */
+  .screen {
+    position: relative;
+    background: #000;
+    border-radius: var(--radius-l) var(--radius-l) 0 0;
+    overflow: hidden;
+  }
+  .screen canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+  }
+  .screen::after {               /* cadre qui devient or en cas de mouvement */
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 3px solid transparent;
+    border-radius: inherit;
+    pointer-events: none;
+    transition: border-color .2s;
+  }
+  .screen[data-motion="true"]::after { border-color: var(--gold); }
+
+  .osd {                         /* incrustations façon caméra de surveillance */
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    font: 600 1rem/1 var(--font-ui);
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, .85);
+  }
+  .osd-live {
+    position: absolute; top: .8rem; left: .9rem;
+    display: flex; align-items: center; gap: .45rem;
+  }
+  .osd-live::before {
+    content: "";
+    width: .55rem; height: .55rem;
+    border-radius: 50%;
+    background: var(--down);
+  }
+  .osd-stamp {
+    position: absolute; right: .9rem; bottom: .8rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .osd-mask { position: absolute; left: .9rem; bottom: .8rem; }
+  .osd-badge {
+    position: absolute; top: .6rem; right: .7rem;
+    padding: .3rem .7rem;
+    border-radius: var(--radius-s);
+    background: var(--gold);
+    color: var(--gold-ink);
+    text-shadow: none;
+    font-weight: 700;
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity .15s, transform .15s;
+  }
+  .screen[data-motion="true"] .osd-badge { opacity: 1; transform: none; }
+
+  .screen-msg {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    padding: 2rem;
+    text-align: center;
+    background: rgba(13, 52, 66, .88);
+    font-size: 1.05rem;
+  }
+  .screen-msg[hidden] { display: none; }
+  .screen-msg p { margin: 0; max-width: 34ch; }
+
+  .screen.flash::before {        /* éclair blanc quand on prend une photo */
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: #fff;
+    pointer-events: none;
+    animation: flash .35s ease-out forwards;
+  }
+  @keyframes flash { from { opacity: .75; } to { opacity: 0; } }
+
+  .screen:fullscreen { border-radius: 0; display: flex; align-items: center; }
+  .screen:fullscreen canvas {
+    width: 100%; height: 100%;
+    aspect-ratio: auto;
+    object-fit: contain;
+  }
+
+  /* ---------- Courbe d'activité ---------- */
+  .trace {
+    padding: .9rem 1rem 1rem;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-top: none;
+    border-radius: 0 0 var(--radius-l) var(--radius-l);
+  }
+  .trace-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: .25rem 1rem;
+  }
+  .trace-head h2 { font-size: 1.1rem; font-weight: 600; }
+  .trace-head p {
+    margin: 0;
+    color: var(--mist);
+    font-variant-numeric: tabular-nums;
+  }
+  #chart {
+    display: block;
+    width: 100%;
+    height: 110px;
+    margin: .6rem 0 .8rem;
+  }
+  .threshold {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: .3rem 1rem;
+    font: 600 1rem/1.2 var(--font-ui);
+  }
+  .threshold input {
+    grid-column: 1 / -1;
+    width: 100%;
+    margin: 0;
+    accent-color: var(--gold);
+  }
+  .threshold output {
+    color: var(--mist);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Boutons ---------- */
+  .side .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .5rem;
+  }
+  #btnDetection, #btnPhoto, #btnAuto, .segmented { grid-column: 1 / -1; }
+  button {
+    padding: .6rem .95rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    background: transparent;
+    color: var(--paper);
+    font: 600 1rem/1 var(--font-ui);
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--mist); }
+  button[aria-pressed="true"] { border-color: var(--gold); color: var(--gold); }
+  button.primary {
+    background: var(--gold);
+    border-color: var(--gold);
+    color: var(--gold-ink);
+  }
+  .segmented { display: grid; grid-template-columns: 1fr 1fr; }
+  .segmented button { border-radius: 0; }
+  .segmented button + button { margin-left: -1px; }
+  .segmented button:first-child { border-radius: var(--radius-s) 0 0 var(--radius-s); }
+  .segmented button:last-child { border-radius: 0 var(--radius-s) var(--radius-s) 0; }
+  .segmented button[aria-pressed="true"] {
+    background: var(--paper);
+    border-color: var(--paper);
+    color: var(--bg);
+  }
+
+  /* ---------- Colonne de droite ---------- */
+  .side section { padding: 1.1rem 0; border-top: 1px solid var(--line); }
+  .side section:first-child { padding-top: 0; border-top: none; }
+  .side h2 { font-size: 1.05rem; font-weight: 600; color: var(--mist); }
+  .state-word {
+    margin: .3rem 0 .35rem;
+    font: 800 2.75rem/1 var(--font-ui);
+  }
+  .state[data-mode="motion"] .state-word { color: var(--gold); }
+  .state[data-mode="pause"] .state-word { color: var(--mist); }
+  .state-note { margin: 0; color: var(--mist); }
+  .figures {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .75rem;
+    margin: 1.1rem 0 0;
+  }
+  .figures dt { color: var(--mist); font-size: .9rem; }
+  .figures dd {
+    margin: 0;
+    font: 700 1.7rem/1.2 var(--font-ui);
+    font-variant-numeric: tabular-nums;
+  }
+  .log ol {
+    list-style: none;
+    margin: .5rem 0 0;
+    padding: 0;
+    max-height: 330px;
+    overflow-y: auto;
+  }
+  .log li {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .45rem 0;
+    border-bottom: 1px solid var(--line-soft);
+    font-variant-numeric: tabular-nums;
+  }
+  .log li span { color: var(--mist); }
+  .log li.ongoing, .log li.ongoing span { color: var(--gold); }
+  .empty { margin: .5rem 0 0; color: var(--mist); }
+  .empty[hidden] { display: none; }
+
+  /* ---------- Photos ---------- */
+  .captures { padding-bottom: 2rem; }
+  .captures-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .25rem 1rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--line);
+  }
+  .captures-head h2 { font-size: 1.3rem; font-weight: 700; }
+  .captures-head span { color: var(--mist); }
+  .captures-head a { margin-left: auto; color: var(--gold); }
+  .gallery {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 168px;
+    gap: .9rem;
+    margin: 1rem 0 0;
+    padding: 0 0 .75rem;
+    list-style: none;
+    overflow-x: auto;
+  }
+  .thumb {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    padding: 0;
+    border: none;
+    background: none;
+    text-align: left;
+  }
+  .thumb img {
+    display: block;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+    border: 2px solid var(--line);
+    border-radius: var(--radius-s);
+    background: #000;
+  }
+  .thumb:hover img { border-color: var(--mist); }
+  .gallery li.fresh .thumb img { border-color: var(--gold); }
+  .thumb-kind { margin-top: .4rem; }
+  .thumb-time {
+    margin-top: .2rem;
+    color: var(--mist);
+    font: 400 .9rem/1.2 var(--font-body);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------- Visionneuse ---------- */
+  dialog {
+    max-width: min(92vw, 900px);
+    padding: 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-l);
+    background: var(--panel);
+    color: var(--paper);
+  }
+  dialog::backdrop { background: rgba(5, 20, 26, .78); }
+  dialog figure { margin: 0; }
+  dialog img {
+    display: block;
+    max-width: 100%;
+    max-height: 72vh;
+    border-radius: var(--radius-s);
+  }
+  dialog figcaption { margin-top: .6rem; font: 600 1.05rem/1.3 var(--font-ui); }
+  .viewer-bar { display: flex; align-items: center; gap: 1rem; margin-top: .75rem; }
+  .viewer-bar a { color: var(--gold); }
+  .viewer-bar button { margin-left: auto; }
+
+  footer {
+    padding-bottom: 1.5rem;
+    color: var(--mist);
+    font-size: .9rem;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <img class="logo" src="logo_m.png" alt="Carnus Rodez, enseignement supérieur">
+  <div class="title">
+    <h1>Caméra 1</h1>
+    <p>Hikvision DS-2CD2112F-I, détection de mouvement avec OpenCV</p>
+  </div>
+  <span class="conn" id="conn" data-state="connecting" role="status">Connexion…</span>
+</header>
+
+<main class="layout">
+  <section class="monitor" aria-label="Image en direct">
+    <div class="screen" id="screen" data-motion="false">
+      <canvas id="video" width="640" height="480" aria-label="Image de la caméra"></canvas>
+      <div class="osd" aria-hidden="true">
+        <span class="osd-live">Direct</span>
+        <span class="osd-badge">Mouvement détecté</span>
+        <span class="osd-mask" id="osdMask" hidden>Masque : en blanc, ce qui a changé</span>
+        <span class="osd-stamp" id="stamp"></span>
+      </div>
+      <div class="screen-msg" id="screenMsg"><p id="screenMsgText">Connexion au serveur…</p></div>
+    </div>
+
+    <div class="trace">
+      <div class="trace-head">
+        <h2>Activité sur les 60 dernières secondes</h2>
+        <p id="levelText">0 % de l'image a changé</p>
+      </div>
+      <canvas id="chart" aria-label="Courbe de la part de l'image qui change, avec le seuil de détection"></canvas>
+      <label class="threshold">
+        <span>Seuil de détection</span>
+        <output id="thresholdOut" for="threshold"></output>
+        <input type="range" id="threshold" min="0" max="1000" step="1">
+      </label>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="state" id="state" data-mode="calm">
+      <h2>État</h2>
+      <p class="state-word" id="stateWord">Calme</p>
+      <p class="state-note" id="stateNote">Rien ne bouge devant la caméra.</p>
+      <dl class="figures">
+        <div><dt>Images par seconde</dt><dd id="fps">–</dd></div>
+        <div><dt>Mouvements</dt><dd id="count">0</dd></div>
+      </dl>
+    </section>
+    <section class="controls" aria-label="Commandes">
+      <button type="button" id="btnDetection">Mettre en pause</button>
+      <div class="segmented" role="group" aria-label="Affichage">
+        <button type="button" data-view="image" aria-pressed="true">Image</button>
+        <button type="button" data-view="masque" aria-pressed="false">Masque</button>
+      </div>
+      <button type="button" id="btnPhoto">Prendre une photo</button>
+      <button type="button" id="btnAuto" aria-pressed="true">Photos auto : activées</button>
+      <button type="button" id="btnSound" aria-pressed="false">Alerte sonore</button>
+      <button type="button" id="btnFull">Plein écran</button>
+    </section>
+    <section class="log">
+      <h2>Mouvements récents</h2>
+      <ol id="log"></ol>
+      <p class="empty" id="logEmpty">Aucun mouvement depuis l'ouverture de la page.</p>
+    </section>
+  </aside>
+</main>
+
+<section class="captures" aria-labelledby="capTitle">
+  <div class="captures-head">
+    <h2 id="capTitle">Photos enregistrées</h2>
+    <span id="capCount"></span>
+    <a href="captures/" target="_blank" rel="noopener">Ouvrir le dossier</a>
+  </div>
+  <ul class="gallery" id="gallery"></ul>
+  <p class="empty" id="galleryEmpty">Les photos prises pendant un mouvement apparaîtront ici.</p>
+</section>
+
+<footer>Projet BTS CIEL, Carnus Rodez</footer>
+
+<dialog id="viewer" aria-labelledby="viewerCap">
+  <figure>
+    <img id="viewerImg" alt="">
+    <figcaption id="viewerCap"></figcaption>
+  </figure>
+  <div class="viewer-bar">
+    <a id="viewerLink" href="#" target="_blank" rel="noopener">Ouvrir l'image dans un onglet</a>
+    <button type="button" id="viewerClose">Fermer</button>
+  </div>
+</dialog>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------------
+// Réglages
+// ---------------------------------------------------------------------
+const HOST = (!location.hostname || location.hostname === "localhost")
+  ? "127.0.0.1" : location.hostname;
+const WS_URL = `ws://${HOST}:8585`;
+const IMG_PIXELS = 640 * 480;   // taille de l'image analysée par OpenCV
+const HISTORY_MS = 60000;       // durée affichée sur la courbe
+const MOTION_END_MS = 1500;     // un mouvement est fini après 1,5 s de calme
+const SLIDER_MAX = 1000, SLIDER_DECADES = 5;   // curseur : 1 à 100 000 pixels
+
+const $ = (id) => document.getElementById(id);
+const el = {
+  conn: $("conn"), screen: $("screen"), video: $("video"), stamp: $("stamp"),
+  osdMask: $("osdMask"), screenMsg: $("screenMsg"), screenMsgText: $("screenMsgText"),
+  chart: $("chart"), levelText: $("levelText"),
+  threshold: $("threshold"), thresholdOut: $("thresholdOut"),
+  btnDetection: $("btnDetection"), btnPhoto: $("btnPhoto"), btnAuto: $("btnAuto"),
+  btnSound: $("btnSound"), btnFull: $("btnFull"),
+  state: $("state"), stateWord: $("stateWord"), stateNote: $("stateNote"),
+  fps: $("fps"), count: $("count"), log: $("log"), logEmpty: $("logEmpty"),
+  gallery: $("gallery"), galleryEmpty: $("galleryEmpty"), capCount: $("capCount"),
+  viewer: $("viewer"), viewerImg: $("viewerImg"), viewerCap: $("viewerCap"),
+  viewerLink: $("viewerLink"), viewerClose: $("viewerClose"),
+};
+const videoCtx = el.video.getContext("2d");
+
+const state = {
+  ws: null,
+  connected: false,
+  everConnected: false,
+  view: "image",
+  detection: true,
+  autoCapture: true,
+  threshold: 47,
+  // Après un clic, on ignore un court instant ce que renvoie le serveur
+  // (sinon le bouton clignote le temps que le serveur prenne en compte le choix)
+  thresholdLockUntil: 0,
+  detectionLockUntil: 0,
+  autoLockUntil: 0,
+  pixels: 0,
+  samples: [],               // historique {t, p} pour la courbe
+  moving: false,
+  lastMotion: 0,
+  lastFrame: 0,
+  framesThisSecond: 0,
+  decoding: false,
+  events: [],                // mouvements {start, end}
+  motionCount: 0,
+  captures: [],
+  sound: false,
+  audio: null,
+};
+
+const nf = (n) => n.toLocaleString("fr-FR");
+const pct = (pixels) => (pixels / IMG_PIXELS * 100)
+  .toLocaleString("fr-FR", { maximumSignificantDigits: 2 });
+const hms = (d) => d.toLocaleTimeString("fr-FR");
+
+// ---------------------------------------------------------------------
+// Connexion WebSocket (reconnexion automatique)
+// ---------------------------------------------------------------------
+function connect() {
+  setConn("connecting");
+  const ws = new WebSocket(WS_URL);
+  ws.binaryType = "arraybuffer";
+  state.ws = ws;
+
+  ws.onopen = () => {
+    state.connected = true;
+    state.everConnected = true;
+    setConn("live");
+    send({ view: state.view });
+  };
+  ws.onclose = () => {
+    state.connected = false;
+    setConn("down");
+    setTimeout(connect, 2000);
+  };
+  ws.onerror = () => ws.close();
+  ws.onmessage = (event) => {
+    if (typeof event.data === "string") {
+      try { onStatus(JSON.parse(event.data)); } catch (e) { /* message ignoré */ }
+    } else {
+      onFrame(event.data);
+    }
+  };
+}
+
+function send(obj) {
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    state.ws.send(JSON.stringify(obj));
+  }
+}
+
+function setConn(mode) {
+  el.conn.dataset.state = mode;
+  el.conn.textContent = { connecting: "Connexion…", live: "En direct", down: "Serveur arrêté" }[mode];
+  updateScreenMessage();
+}
+
+// ---------------------------------------------------------------------
+// Images
+// ---------------------------------------------------------------------
+async function onFrame(buffer) {
+  state.lastFrame = performance.now();
+  state.framesThisSecond++;
+  updateScreenMessage();
+  if (state.decoding) return;          // on saute l'image si la précédente n'est pas finie
+  state.decoding = true;
+  try {
+    const bitmap = await createImageBitmap(new Blob([buffer], { type: "image/jpeg" }));
+    videoCtx.drawImage(bitmap, 0, 0, el.video.width, el.video.height);
+    bitmap.close();
+  } catch (e) {
+    /* image illisible : on attend la suivante */
+  } finally {
+    state.decoding = false;
+  }
+}
+
+function updateScreenMessage() {
+  let text = "";
+  if (!state.connected) {
+    text = state.everConnected
+      ? "Le serveur ne répond plus. Relance python server_ipcam.py : la page se reconnectera toute seule."
+      : "Connexion au serveur… Si rien ne se passe, lance python server_ipcam.py.";
+  } else if (performance.now() - state.lastFrame > 3000) {
+    text = "Pas d'image de la caméra. Le serveur réessaie tout seul toutes les 5 s : vérifie son alimentation et son câble réseau.";
+  }
+  el.screenMsg.hidden = !text;
+  if (text) el.screenMsgText.textContent = text;
+}
+
+// ---------------------------------------------------------------------
+// État envoyé par le serveur
+// ---------------------------------------------------------------------
+function onStatus(msg) {
+  const now = performance.now();
+  if ("detection" in msg && now > state.detectionLockUntil) setDetection(msg.detection);
+  if ("auto_capture" in msg && now > state.autoLockUntil) setAutoCapture(msg.auto_capture);
+  if ("threshold" in msg && performance.now() > state.thresholdLockUntil) {
+    setThresholdUI(msg.threshold);
+  }
+  if ("pixels" in msg) {
+    state.pixels = msg.pixels;
+    state.samples.push({ t: performance.now(), p: msg.pixels });
+  }
+  if (msg.motion) {
+    state.lastMotion = performance.now();
+    if (!state.moving) startMotion();
+  }
+  if (msg.capture) addCapture(msg.capture, true);
+}
+
+function setDetection(on) {
+  state.detection = on;
+  el.btnDetection.textContent = on ? "Mettre en pause" : "Reprendre la détection";
+  el.btnDetection.classList.toggle("primary", !on);
+  if (!on && state.moving) endMotion();
+  renderState();
+}
+
+function setAutoCapture(on) {
+  if (on === state.autoCapture && el.btnAuto.dataset.ready) return;
+  state.autoCapture = on;
+  el.btnAuto.dataset.ready = "1";
+  el.btnAuto.setAttribute("aria-pressed", String(on));
+  el.btnAuto.textContent = `Photos auto : ${on ? "activées" : "désactivées"}`;
+  renderState();
+}
+
+// ---------------------------------------------------------------------
+// Mouvements : début, fin, historique
+// ---------------------------------------------------------------------
+function startMotion() {
+  state.moving = true;
+  state.motionCount++;
+  state.events.unshift({ start: new Date(), end: null });
+  state.events.length = Math.min(state.events.length, 40);
+  beep();
+  renderState();
+  renderLog();
+}
+
+function endMotion() {
+  state.moving = false;
+  if (state.events[0] && !state.events[0].end) state.events[0].end = new Date();
+  renderState();
+  renderLog();
+}
+
+function renderState() {
+  const mode = !state.detection ? "pause" : state.moving ? "motion" : "calm";
+  el.state.dataset.mode = mode;
+  el.screen.dataset.motion = String(mode === "motion");
+  el.stateWord.textContent = { calm: "Calme", motion: "Mouvement", pause: "En pause" }[mode];
+  el.stateNote.textContent = {
+    calm: "Rien ne bouge devant la caméra.",
+    motion: state.autoCapture
+      ? "Des photos sont enregistrées pendant le mouvement."
+      : "Photos automatiques désactivées : rien n'est enregistré.",
+    pause: "Ni alerte ni photo tant que la détection est en pause.",
+  }[mode];
+  el.count.textContent = nf(state.motionCount);
+}
+
+function duration(ms) {
+  const s = Math.max(1, Math.round(ms / 1000));
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, "0")} s`;
+}
+
+function renderLog() {
+  el.log.replaceChildren(...state.events.map((ev) => {
+    const li = document.createElement("li");
+    const time = document.createElement("time");
+    time.dateTime = ev.start.toISOString();
+    time.textContent = hms(ev.start);
+    const span = document.createElement("span");
+    span.textContent = ev.end ? duration(ev.end - ev.start) : "en cours";
+    li.classList.toggle("ongoing", !ev.end);
+    li.append(time, span);
+    return li;
+  }));
+  el.logEmpty.hidden = state.events.length > 0;
+}
+
+// ---------------------------------------------------------------------
+// Seuil de détection (curseur sur une échelle logarithmique)
+// ---------------------------------------------------------------------
+const pixelsFromSlider = (v) => Math.max(1, Math.round(10 ** (v / SLIDER_MAX * SLIDER_DECADES)));
+const sliderFromPixels = (p) => Math.round(Math.log10(Math.max(1, p)) / SLIDER_DECADES * SLIDER_MAX);
+
+function setThresholdUI(pixels) {
+  state.threshold = pixels;
+  el.threshold.value = sliderFromPixels(pixels);
+  el.thresholdOut.textContent = `${nf(pixels)} pixels (${pct(pixels)} %)`;
+}
+
+let thresholdTimer = null;
+el.threshold.addEventListener("input", () => {
+  const pixels = pixelsFromSlider(Number(el.threshold.value));
+  state.thresholdLockUntil = performance.now() + 1500;
+  setThresholdUI(pixels);
+  clearTimeout(thresholdTimer);
+  thresholdTimer = setTimeout(() => send({ threshold: pixels }), 120);
+});
+
+// ---------------------------------------------------------------------
+// Courbe d'activité
+// ---------------------------------------------------------------------
+function resizeChart() {
+  const dpr = window.devicePixelRatio || 1;
+  el.chart.width = Math.round(el.chart.clientWidth * dpr);
+  el.chart.height = Math.round(el.chart.clientHeight * dpr);
+}
+new ResizeObserver(resizeChart).observe(el.chart);
+
+function drawChart() {
+  const c = el.chart, g = c.getContext("2d");
+  const dpr = window.devicePixelRatio || 1;
+  const W = c.width, H = c.height;
+  const padR = 52 * dpr, padT = 6 * dpr, padB = 6 * dpr;
+  const plotW = W - padR, plotH = H - padT - padB;
+  const maxLog = Math.log10(IMG_PIXELS);
+  const yOf = (p) => padT + plotH - (Math.log10(Math.max(p, 1)) / maxLog) * plotH;
+  const now = performance.now();
+  const xOf = (t) => plotW - ((now - t) / HISTORY_MS) * plotW;
+  const css = getComputedStyle(document.documentElement);
+  const gold = css.getPropertyValue("--gold").trim();
+  const mist = css.getPropertyValue("--mist").trim();
+  const line = css.getPropertyValue("--line").trim();
+  const active = state.detection;
+
+  g.clearRect(0, 0, W, H);
+
+  // Graduations : part de l'image qui a changé
+  g.font = `500 ${12 * dpr}px "Barlow Semi Condensed", sans-serif`;
+  g.textBaseline = "middle";
+  for (const p of [0.01, 0.1, 1, 10, 100]) {
+    const y = yOf(IMG_PIXELS * p / 100);
+    g.strokeStyle = line;
+    g.lineWidth = 1 * dpr;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(plotW, y); g.stroke();
+    g.fillStyle = mist;
+    g.fillText(`${p.toLocaleString("fr-FR")} %`, plotW + 8 * dpr, y);
+  }
+
+  // Courbe
+  while (state.samples.length && now - state.samples[0].t > HISTORY_MS + 1000) {
+    state.samples.shift();
+  }
+  const pts = state.samples;
+  const yT = yOf(state.threshold);
+  if (pts.length > 1) {
+    const stroke = new Path2D();
+    pts.forEach((s, i) => (i ? stroke.lineTo(xOf(s.t), yOf(s.p)) : stroke.moveTo(xOf(s.t), yOf(s.p))));
+    const fill = new Path2D(stroke);
+    fill.lineTo(xOf(pts[pts.length - 1].t), padT + plotH);
+    fill.lineTo(xOf(pts[0].t), padT + plotH);
+    fill.closePath();
+
+    const zones = [
+      { top: yT, bottom: H, color: mist, alpha: 0.16 },                     // sous le seuil
+      { top: 0, bottom: yT, color: active ? gold : mist, alpha: 0.32 },     // au-dessus
+    ];
+    for (const z of zones) {
+      g.save();
+      g.beginPath(); g.rect(0, z.top, plotW, z.bottom - z.top); g.clip();
+      g.globalAlpha = z.alpha; g.fillStyle = z.color; g.fill(fill);
+      g.globalAlpha = 1; g.strokeStyle = z.color; g.lineWidth = 2 * dpr; g.stroke(stroke);
+      g.restore();
+    }
+  }
+
+  // Ligne du seuil
+  g.save();
+  g.setLineDash([6 * dpr, 5 * dpr]);
+  g.strokeStyle = active ? gold : mist;
+  g.lineWidth = 1.5 * dpr;
+  g.beginPath(); g.moveTo(0, yT); g.lineTo(plotW, yT); g.stroke();
+  g.restore();
+  g.fillStyle = active ? gold : mist;
+  g.textBaseline = "bottom";
+  g.font = `600 ${12 * dpr}px "Barlow Semi Condensed", sans-serif`;
+  g.fillText("Seuil", 4 * dpr, yT - 3 * dpr);
+}
+
+let lastDraw = 0;
+function loop(t) {
+  if (t - lastDraw > 33) { drawChart(); lastDraw = t; }
+  requestAnimationFrame(loop);
+}
+
+// ---------------------------------------------------------------------
+// Horloge, fin de mouvement, images par seconde
+// ---------------------------------------------------------------------
+function tick() {
+  const now = new Date();
+  el.stamp.textContent = `${now.toLocaleDateString("fr-FR")} ${hms(now)}`;
+  if (state.moving && performance.now() - state.lastMotion > MOTION_END_MS) endMotion();
+  if (state.moving) renderLog();
+  el.levelText.textContent = `${pct(state.pixels)} % de l'image a changé`;
+  updateScreenMessage();
+}
+
+setInterval(() => {
+  el.fps.textContent = state.connected ? nf(state.framesThisSecond) : "–";
+  state.framesThisSecond = 0;
+}, 1000);
+
+// ---------------------------------------------------------------------
+// Boutons
+// ---------------------------------------------------------------------
+el.btnDetection.addEventListener("click", () => {
+  state.detectionLockUntil = performance.now() + 1000;
+  setDetection(!state.detection);
+  send({ detection: state.detection });
+});
+
+el.btnAuto.addEventListener("click", () => {
+  state.autoLockUntil = performance.now() + 1000;
+  setAutoCapture(!state.autoCapture);
+  send({ auto_capture: state.autoCapture });
+});
+
+document.querySelectorAll(".segmented button").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.view = btn.dataset.view;
+    document.querySelectorAll(".segmented button").forEach((b) => {
+      b.setAttribute("aria-pressed", String(b === btn));
+    });
+    el.osdMask.hidden = state.view !== "masque";
+    send({ view: state.view });
+  });
+});
+
+el.btnPhoto.addEventListener("click", () => {
+  send({ snapshot: true });
+  el.screen.classList.remove("flash");
+  void el.screen.offsetWidth;          // relance l'animation
+  el.screen.classList.add("flash");
+});
+
+el.btnSound.addEventListener("click", () => {
+  state.sound = !state.sound;
+  el.btnSound.setAttribute("aria-pressed", String(state.sound));
+  if (state.sound) {
+    state.audio = state.audio || new (window.AudioContext || window.webkitAudioContext)();
+    state.audio.resume();
+    beep();
+  }
+});
+
+el.btnFull.addEventListener("click", () => {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else el.screen.requestFullscreen?.();
+});
+document.addEventListener("fullscreenchange", () => {
+  el.btnFull.textContent = document.fullscreenElement ? "Quitter le plein écran" : "Plein écran";
+});
+
+function beep() {
+  if (!state.sound || !state.audio) return;
+  const a = state.audio, t0 = a.currentTime;
+  for (const d of [0, 0.18]) {
+    const osc = a.createOscillator(), gain = a.createGain();
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.0001, t0 + d);
+    gain.gain.exponentialRampToValueAtTime(0.25, t0 + d + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + d + 0.14);
+    osc.connect(gain).connect(a.destination);
+    osc.start(t0 + d);
+    osc.stop(t0 + d + 0.15);
+  }
+}
+
+// ---------------------------------------------------------------------
+// Photos enregistrées
+// ---------------------------------------------------------------------
+function captureInfo(name) {
+  const m = name.match(/^(mouvement|photo)_(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+  if (!m) return { kind: "Image", when: name };
+  return {
+    kind: m[1] === "photo" ? "Photo manuelle" : "Mouvement",
+    when: `${m[4]}/${m[3]} à ${m[5]}:${m[6]}:${m[7]}`,
+  };
+}
+
+function captureItem(name, fresh) {
+  const info = captureInfo(name);
+  const url = "captures/" + encodeURIComponent(name);
+  const li = document.createElement("li");
+  if (fresh) {
+    li.classList.add("fresh");
+    setTimeout(() => li.classList.remove("fresh"), 5000);
+  }
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "thumb";
+  btn.setAttribute("aria-label", `${info.kind}, ${info.when}`);
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "";
+  img.loading = "lazy";
+  img.width = 168;
+  img.height = 126;
+  const kind = document.createElement("span");
+  kind.className = "thumb-kind";
+  kind.textContent = info.kind;
+  const when = document.createElement("span");
+  when.className = "thumb-time";
+  when.textContent = info.when;
+  btn.append(img, kind, when);
+  btn.addEventListener("click", () => openViewer(url, info));
+  li.append(btn);
+  return li;
+}
+
+function addCapture(name, fresh) {
+  if (state.captures.includes(name)) return;
+  state.captures.unshift(name);
+  el.gallery.prepend(captureItem(name, fresh));
+  renderCaptureCount();
+}
+
+function renderCaptureCount() {
+  const n = state.captures.length;
+  el.capCount.textContent = n ? `${nf(n)} ${n > 1 ? "photos" : "photo"}` : "";
+  el.galleryEmpty.hidden = n > 0;
+}
+
+async function loadCaptures() {
+  try {
+    const res = await fetch("/api/captures", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const list = await res.json();
+    state.captures = list.map((c) => c.name);
+    el.gallery.replaceChildren(...state.captures.map((n) => captureItem(n, false)));
+    renderCaptureCount();
+  } catch (e) {
+    el.galleryEmpty.textContent =
+      "Liste des photos indisponible. Ouvre cette page à l'adresse http://127.0.0.1:8000/camera.html avec server_ipcam.py lancé.";
+  }
+}
+
+function openViewer(url, info) {
+  el.viewerImg.src = url;
+  el.viewerCap.textContent = `${info.kind}, le ${info.when}`;
+  el.viewerLink.href = url;
+  el.viewer.showModal();
+}
+el.viewerClose.addEventListener("click", () => el.viewer.close());
+el.viewer.addEventListener("click", (e) => { if (e.target === el.viewer) el.viewer.close(); });
+
+// ---------------------------------------------------------------------
+// Démarrage
+// ---------------------------------------------------------------------
+setThresholdUI(state.threshold);
+renderState();
+renderLog();
+loadCaptures();
+connect();
+tick();
+setInterval(tick, 250);
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
