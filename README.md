@@ -22,14 +22,15 @@ de centraliser les informations. Il est découpé en deux mini-projets indépend
 - **Détection PIR** : un ESP32 relié à un capteur PIR détecte une présence, allume une LED qui simule
   l'éclairage de la salle et l'éteint automatiquement quand plus personne n'est détecté
   (temporisation de 2 minutes). Chaque changement est envoyé au serveur.
-- **Serveur** : un Raspberry Pi reçoit les événements et les images via une API, stocke les images
-  et enregistre les événements dans une base de données. Il propose aussi un tableau de bord.
+- **Serveur** : un serveur Linux reçoit les événements et les images via une API, stocke les images
+  et enregistre les événements dans une base de données. Une page web permet de consulter les
+  captures envoyées par la caméra.
 
 ## Architecture
 
 ```
 ┌──────────────────┐   événements (JSON)    ┌──────────────────────┐
-│ ESP32 + PIR      │ ─────────────────────► │ Raspberry Pi         │
+│ ESP32 + PIR      │ ─────────────────────► │ Serveur Linux        │
 └──────────────────┘                        │ API + BDD            │
                                             │ stockage des images  │
 ┌──────────────────┐   images (JPEG)        │                      │
@@ -43,7 +44,16 @@ de centraliser les informations. Il est découpé en deux mini-projets indépend
 └──────────────────┘
 ```
 
-L'ESP32, le PC et le Raspberry Pi communiquent par le Wi-Fi de la salle (`Wifi_Iot215`).
+L'ESP32, le PC et le serveur communiquent par le Wi-Fi de la salle (`Wifi_Iot215`).
+
+### Accès au serveur
+
+Depuis le Wi-Fi de la salle :
+
+| Service | Adresse |
+|---|---|
+| API et consultation des captures | http://172.16.10.239:5000/ |
+| Base de données (phpMyAdmin) | http://172.16.10.239/phpmyadmin/ |
 
 ## Organisation du dépôt
 
@@ -81,10 +91,3 @@ puis téléverser le programme.
 | T2 – Détection de mouvement PIR | M.G., N.M. |
 | T3 – Infrastructure réseau et serveur | L.B. |
 
-## État du projet
-
-- [x] Détection de mouvement par la caméra et envoi des captures au serveur
-- [x] Programme ESP32 : détection PIR, temporisation et envoi au serveur
-- [x] Serveur et API en service sur le Raspberry Pi
-- [ ] Tests d'intégration complets (PIR + vidéo + serveur)
-- [ ] Rédaction des rapports et des fiches-recettes
