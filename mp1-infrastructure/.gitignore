@@ -1,0 +1,21 @@
+# Secrets : seul .env.example est publié
+.env
+*.env
+!.env.example
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+
+# Données produites par le serveur (photos, sauvegardes)
+server/uploads/
+*.sql.bak
+sauvegarde*.sql
+
+# Divers
+*.log
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
